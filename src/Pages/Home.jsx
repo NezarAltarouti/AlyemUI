@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Sidebar, { SIDEBAR_WIDTH_OPEN, SIDEBAR_WIDTH_CLOSED } from "../components/Sidebar";
+import SearchBar from '../components/SearchBar';
 
 export default function Home({ navigateTo }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -19,7 +20,6 @@ export default function Home({ navigateTo }) {
           }
         }}
       />
-
       <div
         style={{
           marginLeft: `${marginLeft}px`,
@@ -30,7 +30,12 @@ export default function Home({ navigateTo }) {
           fontFamily: "'DM Sans', sans-serif",
         }}
       >
-        <div style={{ padding: "80px 60px 60px" }}>
+        <div style={{position: "relative", display: "flex", justifyContent: "center", marginTop: "20px"}}>
+          <div style={{display: "flex", alignItems: "center"}}>
+            <SearchBar/>
+          </div>
+        </div>
+        <div style={{ padding: "60px 60px 60px" }}>
           <div style={{ opacity: 0, animation: "fadeSlideUp 0.6s ease forwards 0.15s" }}>
             <h1
               style={{

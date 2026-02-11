@@ -66,3 +66,45 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+.searchBar {
+  display: flex;
+  align-items: center;
+  background: #1a1d24;
+  border: 1px solid #2a2f3a;
+  border-radius: 12px;
+  padding: 8px 14px;
+  height: 40px;
+  width: 360px;
+  transition: all 0.3s ease;
+}
+
+.searchBar:hover {
+  border-color: #8b5cf6;
+}
+
+.searchBar:focus-within {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.2);
+}
+
+.searchBar img {
+  color: #ffffff;
+  font-size: 18px;
+  margin-right: 8px;
+}
+
+.searchBar input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #ffffff;
+  margin-left: 12px;
+  font-size: 14px;
+  width: 100%;
+}
+
+.searchBar input::placeholder {
+  color: #b0b0c0;
+  
+}
