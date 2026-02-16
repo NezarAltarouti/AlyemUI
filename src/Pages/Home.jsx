@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Sidebar, { SIDEBAR_WIDTH_OPEN, SIDEBAR_WIDTH_CLOSED } from "../components/Sidebar";
-import SearchBar from '../components/SearchBar';
+import SearchBar from "../components/SearchBar";
+import NewsFeed from "../components/NewsFeed";
 
 export default function Home({ navigateTo }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -30,12 +31,13 @@ export default function Home({ navigateTo }) {
           fontFamily: "'DM Sans', sans-serif",
         }}
       >
-        <div style={{position: "relative", display: "flex", justifyContent: "center", marginTop: "20px"}}>
-          <div style={{display: "flex", alignItems: "center"}}>
-            <SearchBar/>
+        <div style={{ position: "relative", display: "flex", justifyContent: "center", marginTop: "20px" }}>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <SearchBar />
           </div>
         </div>
         <div style={{ padding: "60px 60px 60px" }}>
+          {/* Welcome heading */}
           <div style={{ opacity: 0, animation: "fadeSlideUp 0.6s ease forwards 0.15s" }}>
             <h1
               style={{
@@ -51,6 +53,75 @@ export default function Home({ navigateTo }) {
             >
               Welcome Home
             </h1>
+          </div>
+
+          {/* Feed section */}
+          <div style={{ marginTop: "48px" }}>
+            {/* Section header */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "24px",
+                opacity: 0,
+                animation: "fadeSlideUp 0.6s ease forwards 0.25s",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                {/* Shield icon */}
+                <div
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "10px",
+                    background: "linear-gradient(135deg, rgba(199,146,234,0.12), rgba(130,170,255,0.12))",
+                    border: "1px solid rgba(199,146,234,0.15)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#c792ea"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2
+                    style={{
+                      fontSize: "18px",
+                      fontWeight: 600,
+                      color: "#e8e6e1",
+                      margin: 0,
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    Cybersecurity Feed
+                  </h2>
+                  <p
+                    style={{
+                      fontSize: "12px",
+                      color: "#5a5a6a",
+                      margin: "2px 0 0 0",
+                    }}
+                  >
+                    Latest news — refreshes on page reload
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* News feed */}
+            <NewsFeed />
           </div>
         </div>
       </div>
