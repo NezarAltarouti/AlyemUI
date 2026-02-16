@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import NewsCard from "./NewsCard";
+import NewsCardGrid from "./NewsCardGrid";
 import { fetchCyberSecurityNews } from "../services/newsApi";
 
 /**
  * NewsFeed — fetches cybersecurity news on mount (and on page refresh)
- * and renders a list of NewsCard components.
+ * and renders a list of NewsCard (compact) or NewsCardGrid (grid) components.
  */
-export default function NewsFeed() {
+export default function NewsFeed({ viewMode = "compact" }) {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -45,11 +46,31 @@ export default function NewsFeed() {
     };
   }, []);
 
+  const isGrid = viewMode === "grid";
+
   /* ── Loading skeleton ── */
   if (loading) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-        {[...Array(5)].map((_, i) => (
+      <div
+        style={
+          isGrid
+            ? {
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                gap: "16px",
+                width: "100%",
+                boxSizing: "border-box",
+              }
+            : {
+                display: "flex",
+                flexDirection: "column",
+                gap: "16px",
+                width: "100%",
+                boxSizing: "border-box",
+              }
+        }
+      >
+        {[...Array(isGrid ? 6 : 5)].map((_, i) => (
           <div
             key={i}
             style={{
@@ -57,7 +78,7 @@ export default function NewsFeed() {
               border: "1px solid rgba(255,255,255,0.04)",
               borderRadius: "16px",
               padding: "24px 28px",
-              minHeight: "100px",
+              minHeight: isGrid ? "220px" : "100px",
               opacity: 0,
               animation: `fadeSlideUp 0.4s ease forwards ${i * 0.08}s`,
             }}
@@ -68,7 +89,8 @@ export default function NewsFeed() {
                 width: "80px",
                 height: "20px",
                 borderRadius: "6px",
-                background: "linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%)",
+                background:
+                  "linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%)",
                 backgroundSize: "200% 100%",
                 animation: "shimmer 1.5s infinite",
                 marginBottom: "12px",
@@ -80,7 +102,8 @@ export default function NewsFeed() {
                 width: `${70 + Math.random() * 25}%`,
                 height: "18px",
                 borderRadius: "4px",
-                background: "linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%)",
+                background:
+                  "linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%)",
                 backgroundSize: "200% 100%",
                 animation: "shimmer 1.5s infinite",
                 marginBottom: "8px",
@@ -91,7 +114,8 @@ export default function NewsFeed() {
                 width: `${40 + Math.random() * 30}%`,
                 height: "18px",
                 borderRadius: "4px",
-                background: "linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%)",
+                background:
+                  "linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%)",
                 backgroundSize: "200% 100%",
                 animation: "shimmer 1.5s infinite",
               }}
@@ -148,10 +172,24 @@ export default function NewsFeed() {
             <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
         </div>
-        <p style={{ color: "#ff6464", fontSize: "15px", fontWeight: 500, marginBottom: "8px" }}>
+        <p
+          style={{
+            color: "#ff6464",
+            fontSize: "15px",
+            fontWeight: 500,
+            marginBottom: "8px",
+          }}
+        >
           Unable to load news
         </p>
-        <p style={{ color: "#5a5a6a", fontSize: "13px", maxWidth: "360px", margin: "0 auto" }}>
+        <p
+          style={{
+            color: "#5a5a6a",
+            fontSize: "13px",
+            maxWidth: "360px",
+            margin: "0 auto",
+          }}
+        >
           {error}. Refresh the page to try again.
         </p>
       </div>
@@ -176,11 +214,31 @@ export default function NewsFeed() {
     );
   }
 
-  /* ── Article list ── */
+  /* ── Article list / grid ── */
+  const CardComponent = isGrid ? NewsCardGrid : NewsCard;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+    <div
+      style={
+        isGrid
+          ? {
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: "16px",
+              width: "100%",
+              boxSizing: "border-box",
+            }
+          : {
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+              width: "100%",
+              boxSizing: "border-box",
+            }
+      }
+    >
       {articles.map((article, i) => (
-        <NewsCard
+        <CardComponent
           key={article.url + i}
           title={article.title}
           publishedAt={article.publishedAt}
