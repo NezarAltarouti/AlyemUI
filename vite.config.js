@@ -16,6 +16,12 @@ export default defineConfig({
         target: "http://127.0.0.1:3000",
         changeOrigin: true,
       },
+      // Ollama local LLM API — proxied to avoid CORS in the browser
+      "/ollama": {
+        target: "http://127.0.0.1:11434",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ollama/, ""),
+      },
     },
   },
 });

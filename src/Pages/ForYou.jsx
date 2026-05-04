@@ -11,23 +11,19 @@ import { ActivitySession } from "../services/activityTracker";
 
 // ---------------------------------------------------------------------------
 // For You — page that displays articles recommended by the core.
-//
-// Source of recommendations: GET /api/recommend
-//
-// We keep the same Appearance / Focus tracking that AleymFeed uses, because:
-//   1. The whole point of this page is to evaluate the recommender; if we
-//      stopped collecting signals here, recommended articles would be
-//      invisible to the model going forward.
-//   2. Appearance on a recommended-but-skipped article is a genuinely
-//      useful negative signal.
 // ---------------------------------------------------------------------------
 
-const RECOMMEND_LIMIT = 50;          // matches server default
+const RECOMMEND_LIMIT = 50;
 const MIN_APPEARANCE_MS = 1000;
 const MIN_FOCUS_MS = 500;
 
-export default function ForYou({ navigateTo }) {
-  // -------- UI state (shared with AleymFeed via the same localStorage keys) --
+export default function ForYou({
+  navigateTo,
+  compactMode = false,
+  selectedArticleId = null,
+  onSummarize,
+}) {
+  // -------- UI state --------
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     const saved = localStorage.getItem("sidebarOpen");
     return saved !== null ? JSON.parse(saved) : true;
@@ -37,21 +33,20 @@ export default function ForYou({ navigateTo }) {
   );
   const [enableTransition, setEnableTransition] = useState(false);
 
+  // Match AleymFeed: force single-column when reading panel is open.
+  const isGrid = !compactMode && viewMode === "grid";
+
   // -------- Data state --------
   const [articles, setArticles] = useState([]);
-  const [sources, setSources] = useState([]); // for source-name lookup
+  const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
   // -------- Refs --------
   const requestIdRef = useRef(0);
-  // Focus sessions (round-trip from this page → ArticlePage → back). Same
-  // model as AleymFeed: opened on click, flushed when ForYou unmounts or
-  // on beforeunload.
   const focusSessionsRef = useRef(new Map());
 
-  // Enable transitions one frame after mount.
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
       requestAnimationFrame(() => setEnableTransition(true));
@@ -59,10 +54,11 @@ export default function ForYou({ navigateTo }) {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // -------- Source lookup map (for the source-name shown on each card) -----
   const sourceMap = useMemo(() => {
     const m = {};
-    sources.forEach((s) => { m[s.id] = s; });
+    sources.forEach((s) => {
+      m[s.id] = s;
+    });
     return m;
   }, [sources]);
 
@@ -74,11 +70,12 @@ export default function ForYou({ navigateTo }) {
         const data = await api.sources.list();
         if (alive) setSources(data || []);
       } catch (err) {
-        // Non-fatal: cards will fall back to "Unknown" source name.
         console.error("Failed to load sources:", err);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // -------- Load recommendations --------
@@ -90,7 +87,7 @@ export default function ForYou({ navigateTo }) {
 
     try {
       const data = await api.recommendations.list({ limit: RECOMMEND_LIMIT });
-      if (reqId !== requestIdRef.current) return; // a newer request is in flight
+      if (reqId !== requestIdRef.current) return;
       setArticles(data || []);
     } catch (err) {
       if (reqId !== requestIdRef.current) return;
@@ -109,8 +106,6 @@ export default function ForYou({ navigateTo }) {
   }, [loadRecommendations]);
 
   // -------- Refresh on SSE Update --------
-  // When the core fetches new articles, the recommendation set may have
-  // shifted. Quietly refresh in the background.
   useEffect(() => {
     const off = api.events.subscribe((evt) => {
       if (evt.type === "Update") loadRecommendations({ silent: true });
@@ -118,32 +113,33 @@ export default function ForYou({ navigateTo }) {
     return off;
   }, [loadRecommendations]);
 
-  // -------- Read-flag sync (so toggling read in a card sticks) --------
+  // -------- Read-flag sync --------
   const onArticleReadChange = useCallback((articleId, newIsRead) => {
     setArticles((prev) =>
       prev.map((a) => (a.id === articleId ? { ...a, is_read: newIsRead } : a)),
     );
   }, []);
 
-  // -------- Focus tracking (round-trip click → ArticlePage → back) --------
-  const onArticleSelect = useCallback((article) => {
-    const existing = focusSessionsRef.current.get(article.id);
-    if (existing) existing.session.stop();
+  // -------- Focus tracking --------
+  const onArticleSelect = useCallback(
+    (article) => {
+      const existing = focusSessionsRef.current.get(article.id);
+      if (existing) existing.session.stop();
 
-    focusSessionsRef.current.set(article.id, {
-      session: new ActivitySession(),
-      openedAt: Date.now(),
-    });
+      focusSessionsRef.current.set(article.id, {
+        session: new ActivitySession(),
+        openedAt: Date.now(),
+      });
 
-    navigateTo("article", { articleId: article.id });
-  }, [navigateTo]);
+      navigateTo("article", { articleId: article.id });
+    },
+    [navigateTo],
+  );
 
-  // Flush any open focus sessions on unmount (return-to-feed flow).
   useEffect(() => {
     return () => flushAllFocusSessions(focusSessionsRef.current);
   }, []);
 
-  // Also flush on full-page unload.
   useEffect(() => {
     const handler = () => flushAllFocusSessions(focusSessionsRef.current);
     window.addEventListener("beforeunload", handler);
@@ -151,26 +147,35 @@ export default function ForYou({ navigateTo }) {
   }, []);
 
   // -------- Layout --------
-  const marginLeft = sidebarOpen ? SIDEBAR_WIDTH_OPEN : SIDEBAR_WIDTH_CLOSED;
-  const isGrid = viewMode === "grid";
+  // In compact mode the panel takes the right side, so suppress sidebar
+  // contribution to layout (matches AleymFeed's behavior).
+  const marginLeft = compactMode
+    ? 0
+    : sidebarOpen
+      ? SIDEBAR_WIDTH_OPEN
+      : SIDEBAR_WIDTH_CLOSED;
+
+  const contentPadding = compactMode ? "24px" : "60px";
 
   return (
     <>
-      <Sidebar
-        open={sidebarOpen}
-        setOpen={(val) => {
-          const newVal = typeof val === "function" ? val(sidebarOpen) : val;
-          localStorage.setItem("sidebarOpen", JSON.stringify(newVal));
-          setSidebarOpen(newVal);
-        }}
-        navigateTo={navigateTo}
-        disableTransition={!enableTransition}
-      />
+      {!compactMode && (
+        <Sidebar
+          open={sidebarOpen}
+          setOpen={(val) => {
+            const newVal = typeof val === "function" ? val(sidebarOpen) : val;
+            localStorage.setItem("sidebarOpen", JSON.stringify(newVal));
+            setSidebarOpen(newVal);
+          }}
+          navigateTo={navigateTo}
+          disableTransition={!enableTransition}
+        />
+      )}
 
       <div
         style={{
           marginLeft: `${marginLeft}px`,
-          width: `calc(100vw - ${marginLeft}px)`,
+          width: compactMode ? "100%" : `calc(100vw - ${marginLeft}px)`,
           transition: enableTransition
             ? "margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
             : "none",
@@ -182,8 +187,14 @@ export default function ForYou({ navigateTo }) {
           boxSizing: "border-box",
         }}
       >
-        <div style={{ padding: "60px", width: "100%", boxSizing: "border-box" }}>
-          {/* Header — title + subtitle + refresh + view toggle */}
+        <div
+          style={{
+            padding: contentPadding,
+            width: "100%",
+            boxSizing: "border-box",
+          }}
+        >
+          {/* Header */}
           <div
             style={{
               display: "flex",
@@ -197,7 +208,9 @@ export default function ForYou({ navigateTo }) {
             <div>
               <h1
                 style={{
-                  fontSize: "clamp(32px, 4vw, 48px)",
+                  fontSize: compactMode
+                    ? "clamp(22px, 3vw, 28px)"
+                    : "clamp(32px, 4vw, 48px)",
                   fontWeight: 700,
                   lineHeight: 1.1,
                   margin: 0,
@@ -242,26 +255,32 @@ export default function ForYou({ navigateTo }) {
                 title="Reload recommendations"
               >
                 <svg
-                  width="14" height="14" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2"
-                  strokeLinecap="round" strokeLinejoin="round"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 >
                   <polyline points="23 4 23 10 17 10" />
                   <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
                 </svg>
                 Refresh
               </button>
-              <ViewToggle
-                viewMode={viewMode}
-                setViewMode={(mode) => {
-                  localStorage.setItem("viewMode", mode);
-                  setViewMode(mode);
-                }}
-              />
+              {!compactMode && (
+                <ViewToggle
+                  viewMode={viewMode}
+                  setViewMode={(mode) => {
+                    localStorage.setItem("viewMode", mode);
+                    setViewMode(mode);
+                  }}
+                />
+              )}
             </div>
           </div>
 
-          {/* Spacer */}
           <div style={{ height: "32px" }} />
 
           {/* Loading */}
@@ -308,8 +327,13 @@ export default function ForYou({ navigateTo }) {
                 }}
               >
                 <svg
-                  width="24" height="24" viewBox="0 0 24 24" fill="none"
-                  stroke="#ff6464" strokeWidth="2" strokeLinecap="round"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#ff6464"
+                  strokeWidth="2"
+                  strokeLinecap="round"
                 >
                   <circle cx="12" cy="12" r="10" />
                   <line x1="12" y1="8" x2="12" y2="12" />
@@ -342,7 +366,13 @@ export default function ForYou({ navigateTo }) {
           {/* Empty */}
           {!loading && !error && articles.length === 0 && (
             <div style={{ textAlign: "center", padding: "60px 20px" }}>
-              <p style={{ color: "#5a5a6a", fontSize: "15px", marginBottom: "8px" }}>
+              <p
+                style={{
+                  color: "#5a5a6a",
+                  fontSize: "15px",
+                  marginBottom: "8px",
+                }}
+              >
                 No recommendations yet.
               </p>
               <p
@@ -353,8 +383,8 @@ export default function ForYou({ navigateTo }) {
                   margin: "0 auto",
                 }}
               >
-                Read a few articles in your feed and vote on them — the recommender
-                needs some signal to work with.
+                Read a few articles in your feed and vote on them — the
+                recommender needs some signal to work with.
               </p>
             </div>
           )}
@@ -367,7 +397,8 @@ export default function ForYou({ navigateTo }) {
                   isGrid
                     ? {
                         display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(280px, 1fr))",
                         gap: "16px",
                         width: "100%",
                         boxSizing: "border-box",
@@ -375,7 +406,7 @@ export default function ForYou({ navigateTo }) {
                     : {
                         display: "flex",
                         flexDirection: "column",
-                        gap: "12px",
+                        gap: compactMode ? "10px" : "12px",
                         width: "100%",
                         boxSizing: "border-box",
                       }
@@ -388,10 +419,12 @@ export default function ForYou({ navigateTo }) {
                     sourceName={sourceMap[article.source]?.name || "Unknown"}
                     index={i}
                     isGrid={isGrid}
+                    isSelected={article.id === selectedArticleId}
                     onSelect={() => onArticleSelect(article)}
                     onReadChange={(newIsRead) =>
                       onArticleReadChange(article.id, newIsRead)
                     }
+                    onSummarize={onSummarize}
                   />
                 ))}
               </div>
@@ -403,7 +436,8 @@ export default function ForYou({ navigateTo }) {
                   padding: "32px 0",
                 }}
               >
-                {articles.length} {articles.length === 1 ? "recommendation" : "recommendations"}
+                {articles.length}{" "}
+                {articles.length === 1 ? "recommendation" : "recommendations"}
               </p>
             </>
           )}
@@ -436,9 +470,7 @@ function flushAllFocusSessions(map) {
 }
 
 // ---------------------------------------------------------------------------
-// RecommendedArticleCard — same Appearance tracking as in AleymFeed.
-// We deliberately keep this signal active on recommended articles too, so
-// that "shown but ignored" recommendations train the model.
+// RecommendedArticleCard
 // ---------------------------------------------------------------------------
 
 function RecommendedArticleCard({
@@ -446,8 +478,10 @@ function RecommendedArticleCard({
   sourceName,
   index,
   isGrid,
+  isSelected,
   onSelect,
   onReadChange,
+  onSummarize,
 }) {
   const ref = useRef(null);
   const sessionRef = useRef(null);
@@ -471,7 +505,6 @@ function RecommendedArticleCard({
         })
         .catch((err) => console.debug("appearance feedback failed:", err));
     } else {
-      // Below threshold — leave room for another attempt on next intersection.
       startedAtRef.current = null;
     }
   }, [article.id]);
@@ -522,6 +555,7 @@ function RecommendedArticleCard({
     description: article.summary,
     isRead: article.is_read,
     onReadChange,
+    onSummarize,
     index,
   };
 
@@ -532,7 +566,19 @@ function RecommendedArticleCard({
   };
 
   return (
-    <div ref={ref} onClick={handleClick} style={{ cursor: "pointer" }}>
+    <div
+      ref={ref}
+      onClick={handleClick}
+      style={{
+        cursor: "pointer",
+        borderRadius: "16px",
+        outline: isSelected
+          ? "2px solid rgba(199,146,234,0.55)"
+          : "2px solid transparent",
+        outlineOffset: "2px",
+        transition: "outline-color 0.2s ease",
+      }}
+    >
       {isGrid ? <NewsCardGrid {...cardProps} /> : <NewsCard {...cardProps} />}
     </div>
   );

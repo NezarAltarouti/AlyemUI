@@ -3,6 +3,7 @@ import SourcesManagements from "./Pages/SourcesManagement";
 import AleymFeed from "./Pages/AleymFeed";
 import ArticlePage from "./Pages/ArticlePage";
 import ForYou from "./Pages/ForYou";
+import SummaryModal from "./components/SummaryModal";
 
 // SLIDE-IN PANEL VERSION
 // When an article is selected from "aleym" or "foryou", the feed shrinks to a
@@ -64,6 +65,12 @@ export default function App() {
       ? initial.articleReturnTo
       : "aleym",
   );
+
+  // ---- AI summary modal state ----
+  // When non-null, the SummaryModal popup is displayed for this article.
+  // Independent of selectedArticleId — the modal can be opened from a card
+  // without opening the slide-in reading panel.
+  const [summaryArticleId, setSummaryArticleId] = useState(null);
 
   useEffect(() => {
     saveNavState({ page, selectedArticleId, articleReturnTo });
@@ -131,6 +138,7 @@ export default function App() {
             navigateTo={navigateTo}
             compactMode={showPanel}
             selectedArticleId={selectedArticleId}
+            onSummarize={setSummaryArticleId}
           />
         </div>
         {showPanel && (
@@ -210,6 +218,13 @@ export default function App() {
           returnTo={articleReturnTo}
         />
       )}
+
+      {/* AI Summary popup — overlays everything, controlled at app level so
+          it can be opened from any feed/page without prop-drilling. */}
+      <SummaryModal
+        articleId={summaryArticleId}
+        onClose={() => setSummaryArticleId(null)}
+      />
     </>
   );
 }

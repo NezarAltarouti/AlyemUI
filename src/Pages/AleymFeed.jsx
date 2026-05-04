@@ -13,45 +13,20 @@ import { ActivitySession } from "../services/activityTracker";
 // Constants
 // ---------------------------------------------------------------------------
 
-// Articles per page during infinite-scroll-down. Per the spec: 20–50 for UX.
 const PAGE_SIZE = 50;
-
-// How close (px) to the sentinel before we trigger the next page.
 const INFINITE_SCROLL_THRESHOLD = 800;
-
 const SEARCH_DEBOUNCE_MS = 300;
 
-// Activity-tracking thresholds.
 const MIN_APPEARANCE_MS = 1000;
 const MIN_FOCUS_MS = 500;
 
-// Background head-poll cadence. SSE is meant to drive this in real time, but
-// we don't trust it as the *only* signal — SSE drops, browsers throttle
-// background tabs, and historically this app's SSE pipeline was lossy. So we
-// poll regardless and treat SSE as a "poll now" hint.
 const HEAD_POLL_MS = 20_000;
-
-// How many articles to ask for when polling the head. Generous so a burst
-// of newly-ingested articles isn't truncated.
 const HEAD_POLL_PAGE_SIZE = 50;
-
-// Manual fetch (Fetch Source) — wait this long for an SSE Update before
-// giving up and reloading anyway.
 const MANUAL_FETCH_TIMEOUT_MS = 15_000;
-
-// We deliberately do NOT define client-side TIME_MIN / TIME_MAX sentinels.
-// The Rust handler only falls back to its own TIME_MIN / TIME_MAX when the
-// `after` / `before` query params are *absent*. Passing extreme sentinel
-// values causes `OffsetDateTime::from_unix_timestamp(...).unwrap()` to panic
-// and return 500. Omit the field entirely for boundary cases.
 
 // ---------------------------------------------------------------------------
 // Cursor helper
 // ---------------------------------------------------------------------------
-//
-// All ordering is by first_fetched_at — that's what the backend sorts on
-// (per the spec) and it's what we paginate against, so display order and
-// pagination order are guaranteed to agree.
 
 const cursorOf = (article) => article.first_fetched_at ?? 0;
 
@@ -68,6 +43,7 @@ export default function AleymFeed({
   navigateTo,
   compactMode = false,
   selectedArticleId = null,
+  onSummarize,
 }) {
   // -------- UI state --------
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -79,9 +55,6 @@ export default function AleymFeed({
   );
   const [enableTransition, setEnableTransition] = useState(false);
 
-  // In compact mode (reading panel open) we force a single-column list,
-  // since a grid inside a ~420px column is cramped and renders 1 col anyway.
-  // Outside compact mode, the user's saved preference applies.
   const isGrid = !compactMode && viewMode === "grid";
 
   // -------- Data state --------
@@ -96,7 +69,6 @@ export default function AleymFeed({
   const [error, setError] = useState(null);
   const [reachedEnd, setReachedEnd] = useState(false);
 
-  // Articles newer than the visible head, queued for the bubble.
   const [pendingNewArticles, setPendingNewArticles] = useState([]);
 
   // -------- Filters --------
@@ -111,15 +83,9 @@ export default function AleymFeed({
   const sentinelRef = useRef(null);
   const scrollAnchorRef = useRef(null);
 
-  // Cancellation IDs. Page loads (initial + scroll-down) share one; head
-  // polls have a separate one so a filter-change-triggered reset doesn't
-  // discard a head-poll response we still want to apply.
   const pageLoadIdRef = useRef(0);
   const headPollIdRef = useRef(0);
 
-  // Live mirrors of state, for use inside callbacks that shouldn't
-  // re-create themselves on every state change. Each ref is kept in sync
-  // via a useEffect just below.
   const articlesRef = useRef(articles);
   const pendingRef = useRef(pendingNewArticles);
   const sortOrderRef = useRef(sortOrder);
@@ -134,7 +100,6 @@ export default function AleymFeed({
     sortOrderRef.current = sortOrder;
   }, [sortOrder]);
 
-  // -------- Mount fade-in for sidebar transitions --------
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
       requestAnimationFrame(() => setEnableTransition(true));
@@ -248,9 +213,6 @@ export default function AleymFeed({
       const last = articles[articles.length - 1];
       const cursor = cursorOf(last);
 
-      // Cursor pagination, per the spec:
-      //   desc → last article is the OLDEST visible; load older still.
-      //   asc  → last article is the NEWEST visible; load newer still.
       const cursorParams =
         sortOrder === "desc" ? { before: cursor } : { after: cursor };
 
@@ -293,7 +255,6 @@ export default function AleymFeed({
     sortOrder,
   ]);
 
-  // -------- Sentinel-driven scroll-down --------
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el || reachedEnd) return;
@@ -309,18 +270,6 @@ export default function AleymFeed({
   }, [loadMore, reachedEnd]);
 
   // -------- Head poll --------
-  // Single source of truth for "are there new articles?". Fires:
-  //   - every HEAD_POLL_MS via setInterval
-  //   - on every SSE Update event
-  //   - on demand from the Refresh button
-  //
-  // Mechanism: derive a "head cursor" from current visible articles
-  // (max first_fetched_at). Query for `?after=headCursor`. Anything that
-  // comes back is by definition newer than what's visible, and goes into
-  // the pending-bubble queue. The user reveals them by clicking the bubble.
-  //
-  // Desc-only: in asc order, "new" articles arrive at the bottom and are
-  // picked up by normal scroll-down pagination, so no bubble is needed.
   const pollHead = useCallback(async () => {
     if (sortOrderRef.current !== "desc") return;
 
@@ -354,9 +303,6 @@ export default function AleymFeed({
       );
       if (fresh.length === 0) return;
 
-      // Always queue new articles into the bubble, regardless of scroll
-      // position. Predictable behavior: any time new articles arrive, the
-      // user sees the bubble and clicks to reveal them.
       setPendingNewArticles((prev) => {
         const seen = new Set(prev.map((a) => a.id));
         const dedup = fresh.filter((a) => !seen.has(a.id));
@@ -368,7 +314,6 @@ export default function AleymFeed({
     }
   }, [buildFilterArgs]);
 
-  // -------- Background head-poll timer --------
   useEffect(() => {
     if (sortOrder !== "desc") return;
     const t = setInterval(() => {
@@ -377,7 +322,6 @@ export default function AleymFeed({
     return () => clearInterval(t);
   }, [pollHead, sortOrder]);
 
-  // -------- SSE: piggyback as a "poll now" trigger --------
   useEffect(() => {
     const unsubscribe = api.events.subscribe((evt) => {
       if (evt.type === "Update") {
@@ -389,7 +333,6 @@ export default function AleymFeed({
     return unsubscribe;
   }, [pollHead]);
 
-  // -------- Reveal pending new articles (bubble click) --------
   const revealPendingArticles = useCallback(() => {
     const pending = pendingRef.current;
     if (pending.length === 0) return;
@@ -413,7 +356,6 @@ export default function AleymFeed({
     });
   }, []);
 
-  // -------- Sorted view --------
   const sortedArticles = useMemo(
     () => sortArticles(articles, sortOrder),
     [articles, sortOrder],
@@ -425,7 +367,6 @@ export default function AleymFeed({
     );
   }, []);
 
-  // -------- Focus tracking --------
   const onArticleSelect = useCallback(
     (article) => {
       const existing = focusSessionsRef.current.get(article.id);
@@ -449,12 +390,6 @@ export default function AleymFeed({
     return () => window.removeEventListener("beforeunload", handler);
   }, []);
 
-  // -------- Refresh button --------
-  // Refresh now does TWO things:
-  //   1. Polls the head — pulls anything newer than what's visible.
-  //   2. Reloads the first page — corrects the visible list.
-  // This way Refresh actually surfaces new articles instead of just
-  // re-reading what was already shown.
   const onRefresh = useCallback(async () => {
     if (refreshing) return;
     setRefreshing(true);
@@ -467,7 +402,6 @@ export default function AleymFeed({
     }
   }, [loadFirstPage, pollHead, refreshing]);
 
-  // -------- Manual fetch --------
   const onManualFetchSource = useCallback(async () => {
     if (!selectedSource || manualFetching) return;
     setManualFetching(true);
@@ -499,16 +433,12 @@ export default function AleymFeed({
   }, [selectedSource, manualFetching, loadFirstPage]);
 
   // -------- Layout --------
-  // In compact mode the panel ate the right side, so the sidebar's
-  // contribution to layout doesn't matter — the feed is constrained by its
-  // parent flex column (~420px). Only apply sidebar margin in full mode.
   const marginLeft = compactMode
     ? 0
     : sidebarOpen
       ? SIDEBAR_WIDTH_OPEN
       : SIDEBAR_WIDTH_CLOSED;
 
-  // Tighter padding in compact mode so cards aren't squeezed.
   const contentPadding = compactMode ? "24px" : "60px";
 
   const selectStyle = {
@@ -531,9 +461,6 @@ export default function AleymFeed({
 
   return (
     <>
-      {/* Sidebar is hidden when the reading panel is open — there's no room
-          for it next to the 420px feed column, and showing it would push
-          everything off-screen. */}
       {!compactMode && (
         <Sidebar
           open={sidebarOpen}
@@ -582,9 +509,6 @@ export default function AleymFeed({
             style={{
               position: compactMode ? "sticky" : "fixed",
               top: compactMode ? "16px" : "24px",
-              // In compact mode the bubble sits inside the column flow, so
-              // simple horizontal centering works. In full mode we offset by
-              // half the sidebar so it stays centered over the visible feed.
               left: compactMode ? "50%" : `calc(50% + ${marginLeft / 2}px)`,
               transform: "translateX(-50%)",
               zIndex: 100,
@@ -859,7 +783,6 @@ export default function AleymFeed({
                 </button>
               )}
             </div>
-            {/* Hide grid/list toggle in compact mode — single-column is forced. */}
             {!compactMode && (
               <ViewToggle
                 viewMode={viewMode}
@@ -992,6 +915,7 @@ export default function AleymFeed({
                     onReadChange={(newIsRead) =>
                       onArticleReadChange(article.id, newIsRead)
                     }
+                    onSummarize={onSummarize}
                   />
                 ))}
               </div>
@@ -1069,6 +993,7 @@ function FeedArticleCard({
   isSelected,
   onSelect,
   onReadChange,
+  onSummarize,
 }) {
   const ref = useRef(null);
   const sessionRef = useRef(null);
@@ -1136,6 +1061,7 @@ function FeedArticleCard({
     description: article.summary,
     isRead: article.is_read,
     onReadChange,
+    onSummarize,
     index,
   };
 
@@ -1151,9 +1077,6 @@ function FeedArticleCard({
       onClick={handleClick}
       style={{
         cursor: "pointer",
-        // Subtle accent ring around the article currently open in the
-        // reading panel. Wraps the existing card without changing its
-        // internal styles.
         borderRadius: "16px",
         outline: isSelected
           ? "2px solid rgba(199,146,234,0.55)"

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import api from "../services/aleymApi";
+import SummarizeButton from "./SummarizeButton";
 
 //NO ANIMATION (NO SLIDE)
-
 
 /**
  * NewsCardGrid — displays a single news article in a square card layout.
@@ -14,6 +14,7 @@ import api from "../services/aleymApi";
  *   - urlToImage: hero image URL
  *   - isRead: boolean — current read state from the API
  *   - onReadChange: (newIsRead: boolean) => void — parent callback when read flag toggles
+ *   - onSummarize: (articleId: string) => void — callback to open AI summary view
  *   - index: number (for staggered animation)
  */
 export default function NewsCardGrid({
@@ -28,16 +29,13 @@ export default function NewsCardGrid({
   urlToImage,
   isRead = false,
   onReadChange,
+  onSummarize,
   index = 0,
 }) {
   const [hovered, setHovered] = useState(false);
   const [hoveredBtn, setHoveredBtn] = useState(null);
 
   // ---- Vote state (persisted via localStorage) ----
-  // The Aleym API has no "get my vote" endpoint, so we cache the choice
-  // locally to keep the UI consistent across navigation/page reloads.
-  // Key shape: aleym:vote:<articleId>  ->  "up" | "down"
-  // null = no vote yet, true = upvoted, false = downvoted.
   const [vote, setVote] = useState(() => {
     if (!id) return null;
     try {
@@ -73,10 +71,7 @@ export default function NewsCardGrid({
     setVote(isUpVote);
     try {
       localStorage.setItem(`aleym:vote:${id}`, isUpVote ? "up" : "down");
-    } catch {
-      // localStorage can throw (quota, private mode). Vote still fires
-      // server-side; we just won't visually remember it next session.
-    }
+    } catch {}
     api.feedback
       .explicitVote({
         news: id,
@@ -86,7 +81,6 @@ export default function NewsCardGrid({
       .catch((err) => console.warn("[NewsCardGrid] vote failed:", err));
   };
 
-  // Shared internals for both manual toggle and auto-mark.
   const writeReadState = (next) => {
     if (!id || readBusy) return;
     setReadBusy(true);
@@ -98,26 +92,20 @@ export default function NewsCardGrid({
       })
       .catch((err) => {
         console.warn("[NewsCardGrid] setRead failed:", err);
-        setReadState(!next); // revert on failure
+        setReadState(!next);
       })
       .finally(() => setReadBusy(false));
   };
 
   const toggleRead = () => writeReadState(!readState);
 
-  // Auto-mark-as-read when the user clicks the card body or the source link.
-  // We always mark as read on click — even if the user previously toggled it
-  // unread — because clicking is a fresh engagement signal.
-  // Skips when the click came from one of the action buttons (those handle
-  // their own state) or when the article is already read.
   const handleCardClick = (e) => {
     if (e.target.closest("button")) return;
     if (readState) return;
     writeReadState(true);
   };
 
-  // Shared style helpers for the action buttons (kept consistent with the
-  // existing source button's look).
+  // Shared style helpers
   const iconBtnStyle = (isHover, isActive, activeGradient) => ({
     width: "32px",
     height: "32px",
@@ -125,14 +113,14 @@ export default function NewsCardGrid({
     background: isActive
       ? activeGradient
       : isHover
-      ? "rgba(255,255,255,0.08)"
-      : "rgba(255,255,255,0.04)",
+        ? "rgba(255,255,255,0.08)"
+        : "rgba(255,255,255,0.04)",
     border: "1px solid",
     borderColor: isActive
       ? "transparent"
       : isHover
-      ? "rgba(255,255,255,0.12)"
-      : "rgba(255,255,255,0.06)",
+        ? "rgba(255,255,255,0.12)"
+        : "rgba(255,255,255,0.06)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -141,6 +129,7 @@ export default function NewsCardGrid({
     transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
     padding: 0,
   });
+
   const tooltipStyle = {
     position: "absolute",
     bottom: "calc(100% + 8px)",
@@ -157,6 +146,7 @@ export default function NewsCardGrid({
     boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
     pointerEvents: "none",
   };
+
   const strokeFor = (isHover, isActive) =>
     isActive ? "#0e0e12" : isHover ? "#e8e6e1" : "#6a6a7a";
 
@@ -231,6 +221,15 @@ export default function NewsCardGrid({
 
             {/* Button group */}
             <div style={{ display: "flex", gap: "6px" }}>
+              {/* ---- AI Summarize ---- */}
+              <SummarizeButton
+                articleId={id}
+                onSummarize={onSummarize}
+                iconBtnStyle={iconBtnStyle}
+                tooltipStyle={tooltipStyle}
+                strokeFor={strokeFor}
+              />
+
               {/* ---- Upvote ---- */}
               <div
                 style={{ position: "relative" }}
@@ -356,7 +355,13 @@ export default function NewsCardGrid({
                     >
                       <rect x="3" y="5" width="18" height="14" rx="2" />
                       <path d="m3 7 9 6 9-6" />
-                      <circle cx="19" cy="6" r="3" fill="#82aaff" stroke="none" />
+                      <circle
+                        cx="19"
+                        cy="6"
+                        r="3"
+                        fill="#82aaff"
+                        stroke="none"
+                      />
                     </svg>
                   )}
                 </button>
@@ -367,10 +372,7 @@ export default function NewsCardGrid({
                 )}
               </div>
 
-              {/* ---- Source link ----
-                  Note: this is intentionally an <a> (not a <button>), so
-                  clicks bubble up to handleCardClick and auto-mark as read
-                  while the new tab opens. */}
+              {/* ---- Source link ---- */}
               <div
                 style={{ position: "relative" }}
                 onMouseEnter={() => setHoveredBtn("source")}
